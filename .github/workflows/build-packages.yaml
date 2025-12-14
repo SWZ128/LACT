@@ -55,21 +55,19 @@ jobs:
           popd
 
       - name: Sign RPM packages
-        if: ${{ env.GPG_KEY_PASSWORD != '' }}
-        steps:
-          - run: mkdir /tmp/source-rpm /tmp/target-rpm && mv release-artifacts/*.rpm /tmp/source-rpm
-          - uses: dante-signal31/rpmsign@008dbb57893cb92d08dd7c016ea61491e62e131d # v1.0.3
-            with:
-              gpg_private_key: ${{ secrets.GPG_KEY }}
-              gpg_private_key_password: ${{ secrets.GPG_KEY_PASSWORD }}
-              gpg_name: Ilya Zlobintsev <ilya.zl@protonmail.com>
-              rpm_folder: /tmp/source-rpm/
-              output_folder: /tmp/target-rpm/
-            env:
-              GPG_KEY_PASSWORD: ${{ secrets.GPG_KEY_PASSWORD }}
-              GPG_KEY: ${{ secrets.GPG_KEY }}
-          - run: mv /tmp/target-rpm/* release-artifacts/
-
+        if: ${{ env.GPG_KEY_PASSWORD != '' && contains(matrix.target-os, 'fedora') }}
+        run: |
+          mkdir /tmp/source-rpm /tmp/target-rpm
+          mv release-artifacts/*.rpm /tmp/source-rpm
+          docker run -v $(pwd):/workspace --workdir /workspace dantesignal31/rpmsign@sha256:5d106a2c5b1b93b70afdac6b9ebf36ae0a094deca240f5ee1274f9746d722c83 \
+            -v /tmp/source-rpm:/tmp/source-rpm \
+            -v /tmp/target-rpm:/tmp/target-rpm \
+            -k $GPG_KEY -p $GPG_KEY_PASSWORD -n "$GPG_NAME" -f /tmp/source-rpm -o /tmp/target-rpm
+          mv /tmp/target-rpm/* release-artifacts/
+        env:
+          GPG_KEY_PASSWORD: ${{ secrets.GPG_KEY_PASSWORD }}
+          GPG_KEY: ${{ secrets.GPG_KEY }}
+          GPG_NAME: Ilya Zlobintsev <ilya.zl@protonmail.com>
 
       - name: Save gpg key
         if: ${{ env.GPG_KEY != '' }}
