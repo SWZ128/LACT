@@ -22,13 +22,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
 
-      - name: Import gpg key
-        run: |
-          echo -n "$GPG_KEY" | base64 -d > /tmp/package-signing-key.gpg
-          echo -n "$GPG_KEY" | base64 -d | gpg --import || true
-        env:
-          GPG_KEY: ${{ secrets.GPG_KEY }}
-
       - name: Install pkger
         run: |
           curl -L -o /usr/local/bin/pkger https://github.com/ilya-zlobintsev/pkger/releases/download/v0.11.1/pkger
@@ -37,17 +30,8 @@ jobs:
       # A GitHub Action that implements smart caching for rust/cargo projects with sensible defaults.
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build packages (with signing)
-        if: ${{ contains(matrix.target-os, 'fedora') && env.GPG_KEY_PASSWORD != '' }}
-        run: pkger -t -c .pkger.yml build ${{ matrix.recipe }} -i ${{ matrix.target-os }}
-        env:
-          GPG_KEY_PASSWORD: ${{ secrets.GPG_KEY_PASSWORD }}
-
-      - name: Build packages (without signing)
-        if: ${{ !contains(matrix.target-os, 'fedora') || env.GPG_KEY_PASSWORD == '' }}
+      - name: Build packages
         run: GPG_TTY=$(tty) pkger -t -c .pkger.yml build --no-sign ${{ matrix.recipe }} -i ${{ matrix.target-os }}
-        env:
-          GPG_KEY_PASSWORD: ${{ secrets.GPG_KEY_PASSWORD }}
 
       - name: Copy release files
         run: |
@@ -70,9 +54,31 @@ jobs:
           done
           popd
 
+      - name: Sign RPM packages
+        if: ${{ env.GPG_KEY_PASSWORD != '' }}
+        steps:
+          - run: mkdir /tmp/source-rpm /tmp/target-rpm && mv release-artifacts/*.rpm /tmp/source-rpm
+          - uses: dante-signal31/rpmsign@008dbb57893cb92d08dd7c016ea61491e62e131d # v1.0.3
+            with:
+              gpg_private_key: ${{ secrets.GPG_KEY }}
+              gpg_private_key_password: ${{ secrets.GPG_KEY_PASSWORD }}
+              gpg_name: Ilya Zlobintsev <ilya.zl@protonmail.com>
+              rpm_folder: /tmp/source-rpm/
+              output_folder: /tmp/target-rpm/
+            env:
+              GPG_KEY_PASSWORD: ${{ secrets.GPG_KEY_PASSWORD }}
+              GPG_KEY: ${{ secrets.GPG_KEY }}
+          - run: mv /tmp/target-rpm/* release-artifacts/
+
+
       - name: Save gpg key
+        if: ${{ env.GPG_KEY != '' }}
         run: |
+          echo -n "$GPG_KEY" | base64 -d > /tmp/package-signing-key.gpg
+          echo -n "$GPG_KEY" | base64 -d | gpg --import || true
           gpg --armor --export > $PWD/release-artifacts/lact.pubkey
+        env:
+          GPG_KEY: ${{ secrets.GPG_KEY }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
